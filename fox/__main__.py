@@ -11,11 +11,23 @@ import fox
 
 def main_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
+
+    if hasattr(fox, '__path__'):
+        paths = ', '.join(path for path in fox.__path__)  # type: ignore
+    else:
+        paths = 'unkown path'
+
     parser.add_argument(
         '--parallel',
         '-p',
         action='store_true',
         help='run tasks in parallel',
+    )
+    parser.add_argument(
+        '--version',
+        '-v',
+        action='version',
+        version=f'fox {fox.__version__} ({paths})',
     )
     return parser
 
