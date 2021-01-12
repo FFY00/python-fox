@@ -25,7 +25,7 @@ def _parallel_executor(tasks: List[_Task]) -> None:
     import tqdm
 
     with tqdm.tqdm(total=len(tasks)) as progress:
-        with concurrent.futures.ThreadPoolExecutor() as executor:
+        with concurrent.futures.ProcessPoolExecutor() as executor:
             futures = [executor.submit(task.func) for task in tasks]
             for future in concurrent.futures.as_completed(futures):
                 progress.update(1)
