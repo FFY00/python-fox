@@ -5,6 +5,7 @@ import io
 import multiprocessing
 import multiprocessing.connection
 import sys
+import traceback
 
 from collections.abc import Iterable
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -27,7 +28,12 @@ Executor = Callable[[List[_Task]], None]
 def _sequencial_executor(tasks: List[_Task]) -> None:
     for task in tasks:
         print(cf.bold_orange(f'> executing {task.name}'))
-        task.func()
+        try:
+            task.func()
+        except Exception as e:
+            print()
+            print(traceback.format_exc())
+            print(cf.bold_red(f'error: {e}\n'))
 
 
 class _ProcessPool:
