@@ -9,8 +9,13 @@ import sys
 from collections.abc import Iterable
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+import colorful as cf
+
 
 __version__ = '0.0.1'
+
+
+cf.use_8_ansi_colors()
 
 
 _Task = collections.namedtuple('_Task', ['name', 'func', 'isolated'])
@@ -21,7 +26,7 @@ Executor = Callable[[List[_Task]], None]
 
 def _sequencial_executor(tasks: List[_Task]) -> None:
     for task in tasks:
-        print('> executing', task.name)
+        print(cf.bold_orange(f'> executing {task.name}'))
         task.func()
 
 
@@ -92,10 +97,10 @@ def _parallel_executor(tasks: List[_Task]) -> None:
         for name, process, out in pool.as_completed():
             process.join()
             if process.exitcode:
-                progress.write(f'error in `{name}`!')
+                progress.write(str(cf.bold_red(f'error executing: {name}!')))
                 progress.write(out, end='')
             else:
-                progress.write(f'done: {name} ({process.exitcode})')
+                progress.write(str(cf.bold_green(f'sucessfully executed: {name}')))
             progress.update(1)
 
 
