@@ -1,22 +1,26 @@
 # SPDX-License-Identifier: EUPL-1.2
 
+from __future__ import annotations
+
 import collections
 import io
 import multiprocessing
 import multiprocessing.connection
 import sys
-import traceback
 
 from collections.abc import Iterable
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from types import TracebackType
+from typing import Any, Callable, Dict, List, Optional, Tuple, Type
 
-import colorful as cf
+import rich.columns
+import rich.console
+import rich.padding
+import rich.panel
+import rich.progress
+import rich.traceback
 
 
 __version__ = '0.0.1'
-
-
-cf.use_8_ansi_colors()
 
 
 _Task = collections.namedtuple('_Task', ['name', 'func', 'isolated'])
@@ -26,21 +30,43 @@ Executor = Callable[[List[_Task]], None]
 
 
 def _sequencial_executor(tasks: List[_Task]) -> None:
+    console = rich.console.Console()
+    result_columns = rich.columns.Columns()
     for task in tasks:
-        print(cf.bold_orange(f'> executing {task.name}'))
+        console.print(f'[bold dark_orange]> executing {task.name}')
+        result = rich.panel.Panel('', title=f'[bold]{task.name}')
         try:
             task.func()
-        except Exception as e:
-            print()
-            print(traceback.format_exc())
-            print(cf.bold_red(f'error: {e}\n'))
+        except Exception:
+            exc_type, exc_value, tb = sys.exc_info()
+            console.print(rich.traceback.Traceback.from_exception(
+                exc_type,
+                exc_value,
+                tb.tb_next if tb else tb,
+            ))
+            console.print(f"[bold red]error executing '{task.name}'!")
+            result.renderable = 'failed'
+            result.style = 'red'
+        else:
+            result.renderable = 'success'
+            result.style = 'green'
+        result_columns.add_renderable(result)
+    console.print(result_columns)
+
+
+_Traceback = Tuple[
+    Optional[Type[BaseException]],
+    Optional[BaseException],
+    Optional[TracebackType],
+]
 
 
 class _ProcessPool:
     def __init__(self) -> None:
         self._pool: Dict[str, Tuple[
             multiprocessing.Process,
-            multiprocessing.connection.Connection,
+            multiprocessing.Queue[str],
+            multiprocessing.Queue[_Traceback],
         ]] = {}
         self._ready: multiprocessing.Queue[str] = multiprocessing.Queue()
 
@@ -51,13 +77,14 @@ class _ProcessPool:
         args: Optional[Tuple[Any, ...]] = None,
         kwargs: Optional[Dict[str, Any]] = None,
     ) -> None:
-        recv_out, send_out = multiprocessing.Pipe()
+        queue_out: multiprocessing.Queue[str] = multiprocessing.Queue()
+        queue_exc: multiprocessing.Queue[_Traceback] = multiprocessing.Queue()
         process = multiprocessing.Process(
             target=self._process_entry,
-            args=(name, func, args or [], kwargs or {}, send_out),
+            args=(name, func, args or [], kwargs or {}, queue_out, queue_exc),
         )
         process.start()
-        self._pool[name] = process, recv_out
+        self._pool[name] = process, queue_out, queue_exc
 
     def _process_entry(
         self,
@@ -65,26 +92,39 @@ class _ProcessPool:
         func: Callable[..., None],
         args: Tuple[Any, ...],
         kwargs: Dict[str, Any],
-        send_out: multiprocessing.connection.Connection,
+        queue_out: multiprocessing.Queue[str],
+        queue_exc: multiprocessing.Queue[_Traceback],
     ) -> None:
         with io.StringIO() as out:
             sys.stdout, sys.stderr = out, out
             try:
-                func(*args, **kwargs)
+                try:
+                    func(*args, **kwargs)
+                except Exception as e:
+                    import traceback
+                    traceback.print_exc()
+                    raise e
             finally:
-                send_out.send(out.getvalue())
+                queue_out.put(out.getvalue())
                 self._ready.put(name)
 
     def as_completed(self) -> Iterable[Tuple[
         str,
         multiprocessing.Process,
-        multiprocessing.connection.Connection,
+        str,
+        Optional[_Traceback],
     ]]:
         while True:
             name = self._ready.get()
 
-            process, recv_out = self._pool[name]
-            yield name, process, recv_out.recv()
+            process, queue_out, queue_exc = self._pool[name]
+
+            process.join()
+            if not queue_exc.empty():
+                exc: Optional[_Traceback] = queue_exc.get_nowait()
+            else:
+                exc = None
+            yield name, process, queue_out.get(), exc
 
             del self._pool[name]
             if not self._pool:  # no pending tasks
@@ -92,22 +132,37 @@ class _ProcessPool:
 
 
 def _parallel_executor(tasks: List[_Task]) -> None:
-    import tqdm
+    result_columns = rich.columns.Columns()
+    results: Dict[str, rich.panel.Panel] = {}
 
-    with tqdm.tqdm(total=len(tasks), desc='Running tasks', bar_format='{l_bar}{bar}| ') as progress:
+    with rich.progress.Progress(
+        rich.progress.RenderableColumn(result_columns),
+        rich.progress.SpinnerColumn(spinner_name='point'),
+        '[bold blue]{task.description}',
+        rich.progress.BarColumn(bar_width=80),
+        '[progress.percentage]{task.completed}/{task.total}',
+    ) as progress:
+        task_progress = progress.add_task('running tasks...', total=len(tasks))
+
         pool = _ProcessPool()
         for task in tasks:
             pool.submit(task.name, task.func)
+            status = rich.panel.Panel('running', title=f'[bold]{task.name}')
+            results[task.name] = status
+            result_columns.add_renderable(status)
 
         # wait for tasks to complete
-        for name, process, out in pool.as_completed():
-            process.join()
+        for name, process, out, exc in pool.as_completed():
             if process.exitcode:
-                progress.write(str(cf.bold_red(f'error executing: {name}!')))
-                progress.write(out, end='')
+                progress.print(f'[bold red]error executing: {name}')
+                progress.print(out, end='', highlight=False)
+                results[name].renderable = 'failed'
+                results[name].style = 'red'
             else:
-                progress.write(str(cf.bold_green(f'sucessfully executed: {name}')))
-            progress.update(1)
+                progress.print(f'[bold green]sucessfully executed: {name}')
+                results[name].renderable = 'success'
+                results[name].style = 'green'
+            progress.advance(task_progress)
 
 
 _tasks: List[_Task] = []
