@@ -7,6 +7,7 @@ import io
 import multiprocessing
 import multiprocessing.connection
 import sys
+import typing
 
 from collections.abc import Iterable
 from types import TracebackType
@@ -149,7 +150,7 @@ class _ProgressWithResults(rich.progress.Progress):
         result_columns: Optional[rich.columns.Columns] = None,
         **kwargs: Any,
     ) -> None:
-        self.result_columns = result_columns
+        self.result_columns = typing.cast(rich.console.ConsoleRenderable, result_columns)
         super().__init__(*args, **kwargs)
 
     def get_renderables(self) -> Iterable[rich.console.RenderableType]:
