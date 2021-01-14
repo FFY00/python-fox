@@ -82,9 +82,10 @@ class _ProcessPool:
     ) -> None:
         queue_out: multiprocessing.Queue[str] = multiprocessing.Queue()
         queue_exc: multiprocessing.Queue[_Traceback] = multiprocessing.Queue()
+        console = rich.console.Console()
         process = multiprocessing.Process(
             target=self._process_entry,
-            args=(name, func, args or [], kwargs or {}, queue_out, queue_exc),
+            args=(name, func, args or [], kwargs or {}, queue_out, queue_exc, console),
         )
         process.start()
         self._pool[name] = process, queue_out, queue_exc
@@ -97,6 +98,7 @@ class _ProcessPool:
         kwargs: Dict[str, Any],
         queue_out: multiprocessing.Queue[str],
         queue_exc: multiprocessing.Queue[_Traceback],
+        console: rich.console.Console,
     ) -> None:
         with io.StringIO() as out:
             sys.stdout, sys.stderr = out, out
@@ -104,8 +106,12 @@ class _ProcessPool:
                 try:
                     func(*args, **kwargs)
                 except Exception as e:
-                    import traceback
-                    traceback.print_exc()
+                    exc_type, exc_value, tb = sys.exc_info()
+                    console.print(rich.traceback.Traceback.from_exception(
+                        exc_type,
+                        exc_value,
+                        tb.tb_next if tb else tb,
+                    ))
                     raise e
             finally:
                 queue_out.put(out.getvalue())
