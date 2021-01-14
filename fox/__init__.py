@@ -26,12 +26,13 @@ __version__ = '0.0.1'
 _Task = collections.namedtuple('_Task', ['name', 'func', 'isolated'])
 
 
-Executor = Callable[[List[_Task]], None]
+Executor = Callable[[List[_Task]], bool]
 
 
-def _sequencial_executor(tasks: List[_Task]) -> None:
+def _sequencial_executor(tasks: List[_Task]) -> bool:
     console = rich.console.Console()
     result_columns = rich.columns.Columns()
+    fail = False
     for task in tasks:
         console.print(f'[bold dark_orange]> executing {task.name}')
         result = rich.panel.Panel('', title=f'[bold]{task.name}')
@@ -50,8 +51,10 @@ def _sequencial_executor(tasks: List[_Task]) -> None:
         else:
             result.renderable = 'success'
             result.style = 'green'
+            fail = True
         result_columns.add_renderable(result)
     console.print(result_columns)
+    return fail
 
 
 _Traceback = Tuple[
@@ -131,9 +134,10 @@ class _ProcessPool:
                 break
 
 
-def _parallel_executor(tasks: List[_Task]) -> None:
+def _parallel_executor(tasks: List[_Task]) -> bool:
     result_columns = rich.columns.Columns()
     results: Dict[str, rich.panel.Panel] = {}
+    fail = False
 
     with rich.progress.Progress(
         rich.progress.RenderableColumn(result_columns),
@@ -158,11 +162,13 @@ def _parallel_executor(tasks: List[_Task]) -> None:
                 progress.print(out, end='', highlight=False)
                 results[name].renderable = 'failed'
                 results[name].style = 'red'
+                fail = True
             else:
                 progress.print(f'[bold green]sucessfully executed: {name}')
                 results[name].renderable = 'success'
                 results[name].style = 'green'
             progress.advance(task_progress)
+    return fail
 
 
 _tasks: List[_Task] = []

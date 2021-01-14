@@ -52,7 +52,11 @@ def main(cli_args: List[str], prog: Optional[str] = None) -> None:
     foxfile_spec.loader.exec_module(foxfile_module)  # type: ignore
 
     # execute tasks
-    executor(fox._tasks)
+    error = executor(fox._tasks)
+
+    # exit with error code
+    if error:
+        exit(1)
 
 
 def entrypoint() -> None:
