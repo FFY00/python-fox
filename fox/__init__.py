@@ -134,17 +134,33 @@ class _ProcessPool:
                 break
 
 
+class _ProgressWithResults(rich.progress.Progress):
+    def __init__(
+        self,
+        *args: Any,
+        result_columns: Optional[rich.columns.Columns] = None,
+        **kwargs: Any,
+    ) -> None:
+        self.result_columns = result_columns
+        super().__init__(*args, **kwargs)
+
+    def get_renderables(self) -> Iterable[rich.console.RenderableType]:
+        yield self.result_columns
+        table = self.make_tasks_table(self.tasks)
+        yield table
+
+
 def _parallel_executor(tasks: List[_Task]) -> bool:
     result_columns = rich.columns.Columns()
     results: Dict[str, rich.panel.Panel] = {}
     fail = False
 
-    with rich.progress.Progress(
-        rich.progress.RenderableColumn(result_columns),
+    with _ProgressWithResults(
         rich.progress.SpinnerColumn(spinner_name='point'),
         '[bold blue]{task.description}',
         rich.progress.BarColumn(bar_width=80),
         '[progress.percentage]{task.completed}/{task.total}',
+        result_columns=result_columns,
     ) as progress:
         task_progress = progress.add_task('running tasks...', total=len(tasks))
 
