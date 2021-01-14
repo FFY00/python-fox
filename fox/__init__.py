@@ -40,6 +40,7 @@ def _sequencial_executor(tasks: List[_Task]) -> bool:
             task.func()
         except Exception:
             exc_type, exc_value, tb = sys.exc_info()
+            assert exc_type and exc_value
             console.print(rich.traceback.Traceback.from_exception(
                 exc_type,
                 exc_value,
@@ -107,6 +108,7 @@ class _ProcessPool:
                     func(*args, **kwargs)
                 except Exception as e:
                     exc_type, exc_value, tb = sys.exc_info()
+                    assert exc_type and exc_value
                     console.print(rich.traceback.Traceback.from_exception(
                         exc_type,
                         exc_value,
